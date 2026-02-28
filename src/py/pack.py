@@ -247,7 +247,7 @@ def pack(lean_dir: str | None = None) -> dict[str, Any]:
         "markets":        MARKET_MAP,
         "by_market": {
             MARKET_ID_TO_NAME.get(mid, str(mid)): int((market_id == mid).sum())
-            for mid in range(4)
+            for mid in range(len(MARKET_MAP))
         },
     }
 

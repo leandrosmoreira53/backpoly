@@ -27,8 +27,9 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-MARKET_IDS = {"btc": 0, "eth": 1, "sol": 2, "xrp": 3}
-LABELS     = {"btc": "BTC15m", "eth": "ETH15m", "sol": "SOL15m", "xrp": "XRP15m"}
+from src.py.config import MARKET_MAP as _MM
+MARKET_IDS = {name.lower(): mid for name, mid in _MM.items()}
+LABELS     = {name.lower(): name for name in _MM}
 
 
 def _max_drawdown(pnl_arr: np.ndarray) -> float:

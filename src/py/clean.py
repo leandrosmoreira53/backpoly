@@ -30,7 +30,7 @@ except ImportError:
                     "Instale com: pip install orjson")
 
 from src.py.config import (
-    MARKET_MAP, CYCLE_LEN_S, T_MIN, T_MAX,
+    MARKET_MAP, CYCLE_LEN_MAP, T_WIN_MAP, get_timeframe,
 )
 
 log = logging.getLogger(__name__)
@@ -136,11 +136,12 @@ def clean_file(raw_path: str | Path, out_path: str | Path) -> dict:
                 dropped += 1
                 continue
 
-            ts_s          = ts_ms // 1000
-            cycle_end_ts  = window_start + CYCLE_LEN_S
+            ts_s = ts_ms // 1000
+            cycle_len     = CYCLE_LEN_MAP.get(market_str, 900)
+            cycle_end_ts  = window_start + cycle_len
             time_remaining = cycle_end_ts - ts_s
 
-            if not (0 <= time_remaining <= CYCLE_LEN_S):
+            if not (0 <= time_remaining <= cycle_len):
                 dropped += 1
                 continue
 
@@ -154,7 +155,12 @@ def clean_file(raw_path: str | Path, out_path: str | Path) -> dict:
             # derived features (pré-computa 1x aqui, nunca no sim)
             best_prob = max(prob_up, prob_down)
             best_side = 0 if prob_up >= prob_down else 1
-            entry_eligible = 1 if T_MIN <= time_remaining <= T_MAX else 0
+            # entry_eligible usa a janela mais ampla do timeframe
+            tf = get_timeframe(market_str)
+            wins = T_WIN_MAP[tf]
+            elig_min = min(w[0] for w in wins)
+            elig_max = max(w[1] for w in wins)
+            entry_eligible = 1 if elig_min <= time_remaining <= elig_max else 0
 
             overround = _get_overround(rec)
             lat = _get_latency(rec)

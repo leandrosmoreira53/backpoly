@@ -31,7 +31,11 @@ log = logging.getLogger(__name__)
 # Worker (sub-processo independente por combinação de parâmetros)
 # ---------------------------------------------------------------------------
 
-_MKT_NAMES = {0: "btc", 1: "eth", 2: "sol", 3: "xrp"}
+def _build_mkt_names() -> dict[int, str]:
+    from src.py.config import MARKET_MAP
+    return {mid: name.lower() for name, mid in MARKET_MAP.items()}
+
+_MKT_NAMES: dict[int, str] = {}  # preenchido lazily em _eval_params
 
 
 def _eval_params(args: tuple) -> dict:
@@ -53,6 +57,10 @@ def _eval_params(args: tuple) -> dict:
 
     from src.cy.sim_core import run_cycles_by_market
     from src.py.metrics   import compute_score
+    from src.py.config    import MARKET_MAP
+
+    mkt_names  = {mid: name.lower() for name, mid in MARKET_MAP.items()}
+    n_markets  = len(MARKET_MAP)
 
     pnl_arr, ent_arr, _, _, pnl_mkt, trades_mkt = run_cycles_by_market(
         time_remaining, prob_up,
@@ -62,6 +70,7 @@ def _eval_params(args: tuple) -> dict:
         float(prob), int(t_min), int(t_max),
         float(size_shares), float(stop_loss),
         n_threads,
+        n_markets,
     )
 
     metrics = compute_score(pnl_arr, ent_arr, cycle_end_ts, train_ids, min_trades)
@@ -74,10 +83,9 @@ def _eval_params(args: tuple) -> dict:
 
     # --- métricas por mercado ---
     mkt_ids = np.array([cycle_market_id[cid] for cid in train_ids], dtype=np.int8)
-    for mid, name in _MKT_NAMES.items():
+    for mid, name in mkt_names.items():
         mask   = mkt_ids == mid
         pnl_m  = pnl_arr[mask]
-        ent_m  = ent_arr[mask]
         n_t    = int(trades_mkt[mid])
         wins   = int((pnl_m > 0).sum()) if n_t > 0 else 0
         win_rt = round(wins / n_t, 4)   if n_t > 0 else 0.0
@@ -158,15 +166,16 @@ def run_grid(
     csv_rows = sorted(results, key=lambda r: (
         r["prob_entry_min"], r["t_min"], r["t_max"], r["stop_loss_delta"]
     ))
+    from src.py.config import MARKET_MAP as _MM
+    _mkt_cols: list[str] = []
+    for _name in sorted(_MM.keys(), key=lambda n: _MM[n]):
+        _n = _name.lower()
+        _mkt_cols += [f"{_n}_pnl", f"{_n}_trades", f"{_n}_wr"]
+
     fieldnames = [
         "prob_entry_min", "t_min", "t_max", "stop_loss_delta",
         "n_trades", "total_pnl", "sharpe", "max_dd", "score",
-        # por mercado
-        "btc_pnl", "btc_trades", "btc_wr",
-        "eth_pnl", "eth_trades", "eth_wr",
-        "sol_pnl", "sol_trades", "sol_wr",
-        "xrp_pnl", "xrp_trades", "xrp_wr",
-    ]
+    ] + _mkt_cols
     with open(GRID_CSV, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         w.writeheader()

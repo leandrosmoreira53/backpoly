@@ -25,7 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from src.py.config import GRID_CSV, REPORTS_DIR
+from src.py.config import GRID_CSV, REPORTS_DIR, MARKET_MAP
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,8 +34,8 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-MARKETS = ["btc", "eth", "sol", "xrp"]
-LABELS  = {"btc": "BTC15m", "eth": "ETH15m", "sol": "SOL15m", "xrp": "XRP15m"}
+MARKETS = [name.lower() for name in sorted(MARKET_MAP, key=MARKET_MAP.__getitem__)]
+LABELS  = {name.lower(): name for name in MARKET_MAP}
 MIN_TRADES = 30
 
 OUT_JSON = os.path.join(REPORTS_DIR, "best_params_per_market.json")

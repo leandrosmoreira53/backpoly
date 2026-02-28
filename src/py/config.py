@@ -21,7 +21,7 @@ MARKET_ID_TO_NAME: dict[int, str] = {v: k for k, v in MARKET_MAP.items()}
 CYCLE_LEN_S: int = 900  # 15 × 60
 
 # ---------------------------------------------------------------------------
-# Janela operacional (segundos restantes no ciclo)
+# Janela operacional padrão (usada fora do grid search)
 # ---------------------------------------------------------------------------
 T_MIN: int = 60    # não entrar nos últimos 60s (resolução muito próxima)
 T_MAX: int = 240   # não entrar muito cedo (spread alto, menos informação)
@@ -39,22 +39,33 @@ TRAIN_DAYS: int = 21
 OOS_DAYS:   int = 7
 
 # ---------------------------------------------------------------------------
-# Grid de parâmetros
+# Grid de parâmetros — 3 dimensões
 # ---------------------------------------------------------------------------
-# prob_entry_min: probabilidade mínima para entrar no trade
-# Range 0.50 → 0.975 em steps de 0.025 (21 pontos)
-_PROB_START = 0.500
-_PROB_STOP  = 1.000
-_PROB_STEP  = 0.025
-PROB_GRID: list[float] = [
-    round(_PROB_START + i * _PROB_STEP, 3)
-    for i in range(int((_PROB_STOP - _PROB_START) / _PROB_STEP))
+
+# 1. prob_entry_min: limiar mínimo de probabilidade para entrar
+#    Range 0.55 → 0.925 em steps de 0.025  (15 pontos)
+PROB_GRID: list[float] = [round(0.55 + i * 0.025, 3) for i in range(16)]
+
+# 2. Janelas de tempo restante (t_min, t_max) em segundos
+#    Cada tupla = (entrada mínima em segundos antes do fim, máxima)
+T_WIN_GRID: list[tuple[int, int]] = [
+    (30,  120),   # entrada tardia  — mais certeza, menos tempo
+    (60,  180),   # janela curta
+    (60,  240),   # janela média (baseline original)
+    (120, 300),   # janela ampla
+    (180, 600),   # entrada antecipada — maior incerteza
 ]
+
+# 3. Stop loss em pontos de probabilidade (0.0 = sem stop, hold to end)
+#    Ex: 0.10 → sai se prob cair 10pp após entrada
+STOP_LOSS_GRID: list[float] = [0.0, 0.05, 0.10, 0.15, 0.20]
+
+# Total de combinações: 16 × 5 × 5 = 400 pontos
+# Com Cython + ProcessPool → < 3s no total
 
 # ---------------------------------------------------------------------------
 # Score no grid
 # ---------------------------------------------------------------------------
-# Número mínimo de trades no treino para parâmetro ser válido
 SCORE_MIN_TRADES: int = 30
 
 # ---------------------------------------------------------------------------

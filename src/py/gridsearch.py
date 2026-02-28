@@ -1,14 +1,18 @@
 """
-gridsearch.py — FASE 4: Grid search paralelo para prob_entry_min.
+gridsearch.py — FASE 4: Grid search 3D paralelo.
 
-Otimizações:
-  - Arrays carregados via mmap_mode='r' (sem cópia em RAM)
-  - ProcessPoolExecutor: cada worker avalia 1 prob_entry_min
-  - Cython sim_core: loop quente paralelo (prange)
-  - cycle_ids do treino passados como array int32 (sem re-leitura)
+Parâmetros otimizados simultaneamente:
+  - prob_entry_min  (limiar de entrada)
+  - (t_min, t_max)  (janela de tempo restante)
+  - stop_loss_delta (stop loss em pontos de prob, 0 = sem stop)
+
+Total: 16 × 5 × 5 = 400 combinações
+Com ProcessPoolExecutor + Cython prange → < 3s
 """
 from __future__ import annotations
 
+import csv
+import itertools
 import json
 import logging
 import math
@@ -22,44 +26,46 @@ import numpy as np
 
 log = logging.getLogger(__name__)
 
+
 # ---------------------------------------------------------------------------
-# Worker (executado em sub-processo)
+# Worker (sub-processo independente por combinação de parâmetros)
 # ---------------------------------------------------------------------------
 
-def _eval_prob(args: tuple) -> dict:
-    """
-    Worker: avalia um único valor de prob_entry_min.
-    Carregado em subprocess separado para paralelismo real.
-    """
-    (prob, month_npz, cycles_npz,
-     t_min, t_max, size_shares, n_threads, min_trades) = args
+def _eval_params(args: tuple) -> dict:
+    (prob, t_min, t_max, stop_loss,
+     month_npz, cycles_npz, size_shares, n_threads, min_trades) = args
 
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
     data   = np.load(month_npz,  mmap_mode="r")
     cycles = np.load(cycles_npz, mmap_mode="r")
 
-    # Contíguos necessários para memoryviews Cython
-    time_remaining   = np.ascontiguousarray(data["time_remaining"],   dtype=np.int16)
-    prob_up          = np.ascontiguousarray(data["prob_up"],          dtype=np.float32)
-    cycle_start_idx  = np.ascontiguousarray(cycles["cycle_start_idx"], dtype=np.int32)
-    cycle_end_idx    = np.ascontiguousarray(cycles["cycle_end_idx"],   dtype=np.int32)
-    cycle_end_ts     = np.ascontiguousarray(cycles["cycle_end_ts"],    dtype=np.int64)
-    train_ids        = np.ascontiguousarray(cycles["train_cycle_ids"], dtype=np.int32)
+    time_remaining  = np.ascontiguousarray(data["time_remaining"],    dtype=np.int16)
+    prob_up         = np.ascontiguousarray(data["prob_up"],           dtype=np.float32)
+    cycle_start_idx = np.ascontiguousarray(cycles["cycle_start_idx"], dtype=np.int32)
+    cycle_end_idx   = np.ascontiguousarray(cycles["cycle_end_idx"],   dtype=np.int32)
+    cycle_end_ts    = np.ascontiguousarray(cycles["cycle_end_ts"],    dtype=np.int64)
+    train_ids       = np.ascontiguousarray(cycles["train_cycle_ids"], dtype=np.int32)
 
     from src.cy.sim_core import run_cycles
     from src.py.metrics   import compute_score
 
-    pnl_arr, ent_arr, _ = run_cycles(
+    pnl_arr, ent_arr, _, _ = run_cycles(
         time_remaining, prob_up,
         cycle_start_idx, cycle_end_idx,
         train_ids,
-        float(prob), t_min, t_max, float(size_shares),
+        float(prob), int(t_min), int(t_max),
+        float(size_shares), float(stop_loss),
         n_threads,
     )
 
     metrics = compute_score(pnl_arr, ent_arr, cycle_end_ts, train_ids, min_trades)
-    metrics["prob_entry_min"] = round(float(prob), 4)
+    metrics.update({
+        "prob_entry_min":  round(float(prob),      4),
+        "t_min":           int(t_min),
+        "t_max":           int(t_max),
+        "stop_loss_delta": round(float(stop_loss), 4),
+    })
     return metrics
 
 
@@ -68,76 +74,97 @@ def _eval_prob(args: tuple) -> dict:
 # ---------------------------------------------------------------------------
 
 def run_grid(
-    prob_grid: list[float] | None = None,
-    workers:   int = 0,
+    prob_grid:      list[float]            | None = None,
+    t_win_grid:     list[tuple[int, int]]  | None = None,
+    stop_loss_grid: list[float]            | None = None,
+    workers: int = 0,
 ) -> list[dict]:
     """
-    Executa grid search sobre PROB_GRID e retorna resultados ordenados por score.
+    Grid search 3D: prob × janela × stop loss.
     Salva reports/grid_train.csv e reports/best_params.json.
+    Retorna lista de resultados ordenada por score (desc).
     """
-    import csv
-
     from src.py.config import (
-        MONTH_NPZ, CYCLES_NPZ, PROB_GRID,
-        T_MIN, T_MAX, SIZE_SHARES, SCORE_MIN_TRADES,
+        MONTH_NPZ, CYCLES_NPZ,
+        PROB_GRID, T_WIN_GRID, STOP_LOSS_GRID,
+        SIZE_SHARES, SCORE_MIN_TRADES,
         GRID_CSV, BEST_PARAMS_JSON, REPORTS_DIR,
         get_grid_workers, get_sim_threads,
     )
 
-    prob_grid = prob_grid or PROB_GRID
-    workers   = workers or get_grid_workers()
-    n_threads = get_sim_threads()
+    prob_grid      = prob_grid      or PROB_GRID
+    t_win_grid     = t_win_grid     or T_WIN_GRID
+    stop_loss_grid = stop_loss_grid or STOP_LOSS_GRID
+    workers        = workers        or get_grid_workers()
+    n_threads      = get_sim_threads()
 
     if not os.path.exists(MONTH_NPZ):
-        raise FileNotFoundError(f"{MONTH_NPZ} não encontrado. Execute run_pack.py primeiro.")
+        raise FileNotFoundError(
+            f"{MONTH_NPZ} não encontrado. Execute run_pack.py primeiro."
+        )
 
-    log.info("Grid search: %d valores de prob_entry_min, %d workers", len(prob_grid), workers)
+    combos = list(itertools.product(prob_grid, t_win_grid, stop_loss_grid))
+    log.info(
+        "Grid search 3D: %d probs × %d janelas × %d stops = %d combinações, %d workers",
+        len(prob_grid), len(t_win_grid), len(stop_loss_grid), len(combos), workers,
+    )
 
     task_args = [
-        (p, MONTH_NPZ, CYCLES_NPZ,
-         T_MIN, T_MAX, SIZE_SHARES, n_threads, SCORE_MIN_TRADES)
-        for p in prob_grid
+        (prob, t_min, t_max, stop,
+         MONTH_NPZ, CYCLES_NPZ, SIZE_SHARES, n_threads, SCORE_MIN_TRADES)
+        for prob, (t_min, t_max), stop in combos
     ]
 
     results: list[dict] = []
 
     if workers == 1:
-        # Sequencial (útil para debug)
         for args in task_args:
-            results.append(_eval_prob(args))
+            results.append(_eval_params(args))
     else:
         with ProcessPoolExecutor(max_workers=workers) as pool:
-            futures = {pool.submit(_eval_prob, args): args[0] for args in task_args}
+            futures = {pool.submit(_eval_params, a): a for a in task_args}
             for fut in as_completed(futures):
                 try:
                     results.append(fut.result())
                 except Exception as exc:
-                    prob = futures[fut]
-                    log.error("Erro ao avaliar prob=%.3f: %s", prob, exc)
+                    a = futures[fut]
+                    log.error("Erro em prob=%.3f t=%d-%d stop=%.2f: %s",
+                              a[0], a[1], a[2], a[3], exc)
 
-    # Ordena por prob_entry_min para o CSV
-    results.sort(key=lambda r: r["prob_entry_min"])
+    # Ordena por score desc para o relatório
+    results.sort(key=lambda r: r.get("score", float("-inf")), reverse=True)
 
-    # Salva CSV
+    # Salva CSV (ordenado por prob/t_min/t_max/stop para facilitar análise)
     os.makedirs(REPORTS_DIR, exist_ok=True)
-    fieldnames = ["prob_entry_min", "n_trades", "total_pnl", "sharpe", "max_dd", "score"]
+    csv_rows = sorted(results, key=lambda r: (
+        r["prob_entry_min"], r["t_min"], r["t_max"], r["stop_loss_delta"]
+    ))
+    fieldnames = ["prob_entry_min", "t_min", "t_max", "stop_loss_delta",
+                  "n_trades", "total_pnl", "sharpe", "max_dd", "score"]
     with open(GRID_CSV, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         w.writeheader()
-        w.writerows(results)
-    log.info("Grid salvo: %s", GRID_CSV)
+        w.writerows(csv_rows)
+    log.info("Grid salvo: %s  (%d linhas)", GRID_CSV, len(csv_rows))
 
-    # Melhor parâmetro (score máximo, excluindo -inf)
+    # Melhor parâmetro (score máximo finito)
     valid = [r for r in results if math.isfinite(r.get("score", float("-inf")))]
     if not valid:
-        log.warning("Nenhum parâmetro válido encontrado (todos abaixo de min_trades=%d)",
-                    SCORE_MIN_TRADES)
+        log.warning(
+            "Nenhuma combinação válida (todos abaixo de min_trades=%d). "
+            "Reduza SCORE_MIN_TRADES em config.py.", SCORE_MIN_TRADES
+        )
         return results
 
-    best = max(valid, key=lambda r: r["score"])
+    best = valid[0]  # já ordenado por score desc
     with open(BEST_PARAMS_JSON, "w") as f:
         json.dump(best, f, indent=2)
-    log.info("Melhor parâmetro: prob_entry_min=%.3f (score=%.4f, n_trades=%d)",
-             best["prob_entry_min"], best["score"], best["n_trades"])
 
+    log.info(
+        "Melhor: prob=%.3f  t_min=%d  t_max=%d  stop=%.2f  "
+        "score=%.4f  sharpe=%.4f  n_trades=%d",
+        best["prob_entry_min"], best["t_min"], best["t_max"],
+        best["stop_loss_delta"], best["score"],
+        best["sharpe"], best["n_trades"],
+    )
     return results

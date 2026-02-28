@@ -59,7 +59,8 @@ def _compute_cycle_ids_split(
             "Apenas %d dias disponíveis (treino=%d oos=%d). "
             "Ajuste TRAIN_DAYS/OOS_DAYS.", total_days, train_days, oos_days
         )
-        oos_days = max(1, total_days - train_days)
+        oos_days   = max(1, total_days - train_days)
+        train_days = total_days - oos_days
 
     train_dates = set(unique_dates[:train_days])
     oos_dates   = set(unique_dates[train_days: train_days + oos_days])

@@ -86,7 +86,7 @@ def aggregate_by_market(
     """
     rows = []
     for mid, name in market_names.items():
-        mask  = np.array([cycle_market_id[cid] == mid for cid in cycle_ids])
+        mask  = np.array([cycle_market_id[cid] == mid for cid in cycle_ids], dtype=bool)
         pnl_m = pnl_arr[mask]
         ent_m = entered_arr[mask]
 

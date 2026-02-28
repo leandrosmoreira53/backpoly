@@ -25,14 +25,9 @@ Uso:
 import numpy as np
 cimport numpy as cnp
 from cython.parallel import prange
-from libc.math cimport fmaxf
 
-# Tipos
-ctypedef cnp.int8_t   i8
-ctypedef cnp.int16_t  i16
-ctypedef cnp.int32_t  i32
-ctypedef cnp.int64_t  i64
-ctypedef cnp.float32_t f32
+# Tipos declarados em sim_core.pxd (incluído automaticamente pelo Cython):
+#   i8=int8, i16=int16, i32=int32, i64=int64, f32=float32
 
 # Inicializa API NumPy C (necessário para memoryviews)
 cnp.import_array()
@@ -86,15 +81,16 @@ def run_cycles(
 
             entered_flag = False
             ep           = 0.0
-            last_p       = -1.0  # -1 indica que ainda não vimos obs perto do final
+            last_p       = 0.5  # padrão neutro se ciclo sem obs final
 
             for i in range(start, end):
                 tr = time_remaining[i]
                 p  = prob_up[i]
 
-                # Captura proxy de outcome (última obs com tr próximo de 0)
-                if tr <= 5:
-                    last_p = p
+                # Dados ordenados por ts_s ASC → time_remaining DESC.
+                # Última iteração = observação mais próxima da resolução.
+                # Atualiza sempre: ao sair do loop, last_p = última obs.
+                last_p = p
 
                 # Tenta entrar se ainda não entrou e condições ok
                 if (not entered_flag
@@ -172,13 +168,12 @@ def run_cycles_by_market(
 
             entered_flag = False
             ep           = 0.0
-            last_p       = -1.0
+            last_p       = 0.5
 
             for i in range(start, end):
                 tr = time_remaining[i]
                 p  = prob_up[i]
-                if tr <= 5:
-                    last_p = p
+                last_p = p  # última iteração = obs mais próxima da resolução
                 if (not entered_flag
                         and t_min <= tr <= t_max
                         and p >= prob_entry_min):
@@ -263,15 +258,14 @@ def run_cycles_best_side(
 
             entered_flag = False
             ep           = 0.0
-            last_pu      = -1.0
+            last_pu      = 0.5
             entry_side   = 0
 
             for i in range(start, end):
                 tr   = time_remaining[i]
                 p    = best_prob[i]
                 side = best_side[i]
-                if tr <= 5:
-                    last_pu = prob_up[i]
+                last_pu = prob_up[i]  # última iteração = obs mais próxima da resolução
                 if (not entered_flag
                         and t_min <= tr <= t_max
                         and p >= prob_entry_min):

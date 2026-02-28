@@ -88,6 +88,7 @@ def get_grid_workers()  -> int: return _auto(N_GRID_WORKERS)
 # ---------------------------------------------------------------------------
 ROOT_DIR        = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 DATA_RAW_DIR    = os.path.join(ROOT_DIR, "data_raw")
+BOT_LOGS_DIR    = os.path.join(DATA_RAW_DIR, "bot_logs")   # logs do bot de execução
 DATA_CACHE_DIR  = os.path.join(ROOT_DIR, "data_cache")
 LEAN_DIR        = os.path.join(DATA_CACHE_DIR, "lean")
 MONTH_NPZ       = os.path.join(DATA_CACHE_DIR, "month.npz")

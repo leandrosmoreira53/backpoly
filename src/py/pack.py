@@ -143,7 +143,7 @@ def pack(lean_dir: str | None = None) -> dict[str, Any]:
     ts_s           = np.ascontiguousarray(col("ts_s"),           dtype=np.int64)
     market_id      = np.ascontiguousarray(col("market_id"),      dtype=np.int8)
     cycle_id       = np.ascontiguousarray(col("cycle_id"),       dtype=np.int32)
-    time_remaining = np.ascontiguousarray(col("time_remaining"), dtype=np.int16)
+    time_remaining = np.ascontiguousarray(col("time_remaining"), dtype=np.int32)
     prob_up        = np.ascontiguousarray(col("prob_up"),        dtype=np.float32)
     prob_down      = np.ascontiguousarray(col("prob_down"),      dtype=np.float32)
     best_prob      = np.ascontiguousarray(col("best_prob"),      dtype=np.float32)

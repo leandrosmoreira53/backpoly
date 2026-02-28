@@ -197,7 +197,7 @@ def clean_botlog_file(raw_path: str | Path, out_dir: str | Path) -> dict:
                 "ts_s":           np.array([r["ts_s"]           for r in vals], dtype=np.int64),
                 "market_id":      np.array([r["market_id"]      for r in vals], dtype=np.int8),
                 "cycle_end_ts":   np.array([r["cycle_end_ts"]   for r in vals], dtype=np.int64),
-                "time_remaining": np.array([r["time_remaining"] for r in vals], dtype=np.int16),
+                "time_remaining": np.array([r["time_remaining"] for r in vals], dtype=np.int32),
                 "prob_up":        np.array([r["prob_up"]        for r in vals], dtype=np.float32),
                 "prob_down":      np.array([r["prob_down"]      for r in vals], dtype=np.float32),
                 "best_prob":      np.array([r["best_prob"]      for r in vals], dtype=np.float32),

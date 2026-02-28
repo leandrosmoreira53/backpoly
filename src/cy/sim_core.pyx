@@ -40,7 +40,7 @@ cnp.import_array()
 # Função principal
 # ---------------------------------------------------------------------------
 def run_cycles(
-    i16[::1]  time_remaining,
+    i32[::1]  time_remaining,
     f32[::1]  prob_up,
     i32[::1]  cycle_start_idx,
     i32[::1]  cycle_end_idx,
@@ -56,7 +56,7 @@ def run_cycles(
     Backtest de um subconjunto de ciclos com stop loss opcional.
 
     Args:
-        time_remaining   : int16[N]  — segundos restantes por linha
+        time_remaining   : int32[N]  — segundos restantes por linha
         prob_up          : float32[N]
         cycle_start_idx  : int32[C]  — offset início de cada ciclo
         cycle_end_idx    : int32[C]  — offset fim (exclusive)
@@ -77,7 +77,7 @@ def run_cycles(
     cdef:
         int nc    = cycle_ids.shape[0]
         int ci, cid, i, start, end
-        i16 tr
+        i32 tr
         f32 p, ep, last_p, stop_level
         bint entered_flag, stop_hit
 
@@ -146,7 +146,7 @@ def run_cycles(
 # Variante: PnL por mercado
 # ---------------------------------------------------------------------------
 def run_cycles_by_market(
-    i16[::1]  time_remaining,
+    i32[::1]  time_remaining,
     f32[::1]  prob_up,
     i32[::1]  cycle_start_idx,
     i32[::1]  cycle_end_idx,
@@ -169,7 +169,7 @@ def run_cycles_by_market(
     cdef:
         int nc    = cycle_ids.shape[0]
         int ci, cid, i, start, end, mid
-        i16 tr
+        i32 tr
         f32 p, ep, last_p, stop_level
         bint entered_flag, stop_hit
 
@@ -240,7 +240,7 @@ def run_cycles_by_market(
 # Variante: opera pelo lado com maior prob (UP ou DOWN)
 # ---------------------------------------------------------------------------
 def run_cycles_best_side(
-    i16[::1]  time_remaining,
+    i32[::1]  time_remaining,
     f32[::1]  best_prob,
     i8[::1]   best_side,
     f32[::1]  prob_up,
@@ -266,7 +266,7 @@ def run_cycles_best_side(
     cdef:
         int nc    = cycle_ids.shape[0]
         int ci, cid, i, start, end
-        i16 tr
+        i32 tr
         f32 p, ep, last_pu, stop_level
         i8  side, entry_side
         bint entered_flag, stop_hit, outcome_matches

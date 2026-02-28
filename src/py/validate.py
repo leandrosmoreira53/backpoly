@@ -60,7 +60,7 @@ def run_oos() -> dict[str, Any]:
     data   = np.load(MONTH_NPZ,  mmap_mode="r")
     cycles = np.load(CYCLES_NPZ, mmap_mode="r")
 
-    time_remaining  = np.ascontiguousarray(data["time_remaining"],    dtype=np.int16)
+    time_remaining  = np.ascontiguousarray(data["time_remaining"],    dtype=np.int32)
     prob_up         = np.ascontiguousarray(data["prob_up"],           dtype=np.float32)
     cycle_start_idx = np.ascontiguousarray(cycles["cycle_start_idx"],  dtype=np.int32)
     cycle_end_idx   = np.ascontiguousarray(cycles["cycle_end_idx"],    dtype=np.int32)

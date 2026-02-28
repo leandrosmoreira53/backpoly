@@ -47,7 +47,7 @@ def _eval_params(args: tuple) -> dict:
     data   = np.load(month_npz,  mmap_mode="r")
     cycles = np.load(cycles_npz, mmap_mode="r")
 
-    time_remaining  = np.ascontiguousarray(data["time_remaining"],    dtype=np.int16)
+    time_remaining  = np.ascontiguousarray(data["time_remaining"],    dtype=np.int32)
     prob_up         = np.ascontiguousarray(data["prob_up"],           dtype=np.float32)
     cycle_start_idx = np.ascontiguousarray(cycles["cycle_start_idx"], dtype=np.int32)
     cycle_end_idx   = np.ascontiguousarray(cycles["cycle_end_idx"],   dtype=np.int32)

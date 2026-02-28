@@ -31,6 +31,9 @@ log = logging.getLogger(__name__)
 # Worker (sub-processo independente por combinação de parâmetros)
 # ---------------------------------------------------------------------------
 
+_MKT_NAMES = {0: "btc", 1: "eth", 2: "sol", 3: "xrp"}
+
+
 def _eval_params(args: tuple) -> dict:
     (prob, t_min, t_max, stop_loss,
      month_npz, cycles_npz, size_shares, n_threads, min_trades) = args
@@ -45,14 +48,16 @@ def _eval_params(args: tuple) -> dict:
     cycle_start_idx = np.ascontiguousarray(cycles["cycle_start_idx"], dtype=np.int32)
     cycle_end_idx   = np.ascontiguousarray(cycles["cycle_end_idx"],   dtype=np.int32)
     cycle_end_ts    = np.ascontiguousarray(cycles["cycle_end_ts"],    dtype=np.int64)
+    cycle_market_id = np.ascontiguousarray(cycles["cycle_market_id"], dtype=np.int8)
     train_ids       = np.ascontiguousarray(cycles["train_cycle_ids"], dtype=np.int32)
 
-    from src.cy.sim_core import run_cycles
+    from src.cy.sim_core import run_cycles_by_market
     from src.py.metrics   import compute_score
 
-    pnl_arr, ent_arr, _, _ = run_cycles(
+    pnl_arr, ent_arr, _, _, pnl_mkt, trades_mkt = run_cycles_by_market(
         time_remaining, prob_up,
         cycle_start_idx, cycle_end_idx,
+        cycle_market_id,
         train_ids,
         float(prob), int(t_min), int(t_max),
         float(size_shares), float(stop_loss),
@@ -66,6 +71,20 @@ def _eval_params(args: tuple) -> dict:
         "t_max":           int(t_max),
         "stop_loss_delta": round(float(stop_loss), 4),
     })
+
+    # --- métricas por mercado ---
+    mkt_ids = np.array([cycle_market_id[cid] for cid in train_ids], dtype=np.int8)
+    for mid, name in _MKT_NAMES.items():
+        mask   = mkt_ids == mid
+        pnl_m  = pnl_arr[mask]
+        ent_m  = ent_arr[mask]
+        n_t    = int(trades_mkt[mid])
+        wins   = int((pnl_m > 0).sum()) if n_t > 0 else 0
+        win_rt = round(wins / n_t, 4)   if n_t > 0 else 0.0
+        metrics[f"{name}_pnl"]    = round(float(pnl_mkt[mid]), 4)
+        metrics[f"{name}_trades"] = n_t
+        metrics[f"{name}_wr"]     = win_rt
+
     return metrics
 
 
@@ -139,8 +158,15 @@ def run_grid(
     csv_rows = sorted(results, key=lambda r: (
         r["prob_entry_min"], r["t_min"], r["t_max"], r["stop_loss_delta"]
     ))
-    fieldnames = ["prob_entry_min", "t_min", "t_max", "stop_loss_delta",
-                  "n_trades", "total_pnl", "sharpe", "max_dd", "score"]
+    fieldnames = [
+        "prob_entry_min", "t_min", "t_max", "stop_loss_delta",
+        "n_trades", "total_pnl", "sharpe", "max_dd", "score",
+        # por mercado
+        "btc_pnl", "btc_trades", "btc_wr",
+        "eth_pnl", "eth_trades", "eth_wr",
+        "sol_pnl", "sol_trades", "sol_wr",
+        "xrp_pnl", "xrp_trades", "xrp_wr",
+    ]
     with open(GRID_CSV, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         w.writeheader()

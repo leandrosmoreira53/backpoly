@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Cython build artifacts
+*.so
+*.pyd
+*.c          # gerado pelo Cython (manter .pyx)
+*.html       # anotações Cython (opcional manter)
+
+# Dados raw (podem ser grandes)
+data_raw/
+
+# Cache de dados compilado
+data_cache/
+
+# Relatórios (gerados pelo pipeline)
+reports/
+
+# Ambientes
+.venv/
+venv/
+env/
+.env
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+
+# macOS
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb

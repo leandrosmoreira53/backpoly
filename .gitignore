@@ -8,11 +8,13 @@ dist/
 build/
 *.egg
 
-# Cython build artifacts
+# Cython build artifacts (gerados automaticamente, não versionar)
 *.so
 *.pyd
-*.c          # gerado pelo Cython (manter .pyx)
-*.html       # anotações Cython (opcional manter)
+# Fonte C gerado pelo Cython a partir de .pyx
+*.c
+# Arquivo de anotação HTML do Cython
+*.html
 
 # Dados raw (podem ser grandes)
 data_raw/

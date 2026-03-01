@@ -95,7 +95,9 @@ def pack(lean_dir: str | None = None) -> dict[str, Any]:
     # ------------------------------------------------------------------
     if _USE_POLARS:
         df = pl.concat([
-            pl.scan_parquet(str(f)) for f in parquet_files
+            pl.scan_parquet(str(f)).with_columns(
+                pl.col("time_remaining").cast(pl.Int32)
+            ) for f in parquet_files
         ]).collect()
 
         # Sort: (market_id, cycle_end_ts, ts_s)
@@ -116,8 +118,17 @@ def pack(lean_dir: str | None = None) -> dict[str, Any]:
 
     else:
         import pyarrow.parquet as pq
-        tables = [pq.read_table(str(f)) for f in parquet_files]
         import pyarrow as pa
+        tables = [pq.read_table(str(f)) for f in parquet_files]
+        # Normaliza time_remaining para int32 (compatibilidade com arquivos antigos int16)
+        tables = [
+            t.set_column(
+                t.schema.get_field_index("time_remaining"),
+                "time_remaining",
+                t.column("time_remaining").cast(pa.int32()),
+            ) if t.schema.field("time_remaining").type != pa.int32() else t
+            for t in tables
+        ]
         tbl = pa.concat_tables(tables)
         # Ordenar via numpy (lento, mas funcional)
         import pandas as pd

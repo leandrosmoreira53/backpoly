@@ -46,15 +46,19 @@ def _out_path(raw: Path) -> Path:
     return Path(LEAN_DIR) / f"{date_str}.{market_dir}.parquet"
 
 
+_DEBUG_CLEAN = False  # definido em main()
+
 def _task(args: tuple[str, str]) -> dict:
     raw_path, out_path = args
     try:
-        return clean_file(raw_path, out_path)
+        return clean_file(raw_path, out_path, debug=_DEBUG_CLEAN)
     except Exception as exc:
         return {"file": raw_path, "error": str(exc), "kept": 0, "dropped": 0}
 
 
-def main(markets: list[str] | None = None, workers: int = 0) -> None:
+def main(markets: list[str] | None = None, workers: int = 0, debug: bool = False) -> None:
+    global _DEBUG_CLEAN
+    _DEBUG_CLEAN = debug
     os.makedirs(LEAN_DIR, exist_ok=True)
     os.makedirs(os.path.dirname(META_JSON), exist_ok=True)
 
@@ -92,12 +96,23 @@ def main(markets: list[str] | None = None, workers: int = 0) -> None:
     total_kept    = sum(s.get("kept", 0) for s in all_stats)
     total_dropped = sum(s.get("dropped", 0) for s in all_stats)
     errors        = [s for s in all_stats if "error" in s]
+    high_drop     = [s for s in all_stats if s.get("kept", 1) == 0 and s.get("dropped", 0) > 0]
 
     log.info("CLEAN concluído: kept=%d dropped=%d arquivos_com_erro=%d",
              total_kept, total_dropped, len(errors))
     if errors:
         for e in errors:
             log.error("Erro em %s: %s", e["file"], e.get("error"))
+    if high_drop and not debug:
+        # Agrega motivos de rejeição dos arquivos com 0 linhas válidas
+        all_reasons: dict[str, int] = {}
+        for s in high_drop:
+            for r, c in s.get("drop_reasons", {}).items():
+                all_reasons[r] = all_reasons.get(r, 0) + c
+        if all_reasons:
+            log.warning("%d arquivo(s) com 0 linhas válidas. Motivos agregados: %s",
+                        len(high_drop), all_reasons)
+            log.warning("Para ver exemplos de registros rejeitados, use: --debug")
 
     # Salva stats no meta.json (parcial — será atualizado pelo PACK)
     meta: dict = {}
@@ -122,5 +137,7 @@ if __name__ == "__main__":
                         help="Número de workers (0=auto)")
     parser.add_argument("--markets",  nargs="*", default=None,
                         help="Mercados a processar (padrão: todos)")
+    parser.add_argument("--debug",    action="store_true",
+                        help="Loga exemplos de registros rejeitados por motivo")
     args = parser.parse_args()
-    main(markets=args.markets, workers=args.workers)
+    main(markets=args.markets, workers=args.workers, debug=args.debug)

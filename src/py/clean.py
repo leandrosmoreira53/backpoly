@@ -91,11 +91,12 @@ def _get_latency(rec: dict[str, Any]) -> float:
         return 0.0
 
 
-def clean_file(raw_path: str | Path, out_path: str | Path) -> dict:
+def clean_file(raw_path: str | Path, out_path: str | Path, debug: bool = False) -> dict:
     """
     Limpa um arquivo JSONL raw e escreve Parquet lean.
 
-    Retorna dict com stats: kept, dropped, latencies.
+    Retorna dict com stats: kept, dropped, latencies, drop_reasons.
+    Se debug=True, loga os primeiros 3 exemplos de cada motivo de rejeição.
     """
     raw_path = Path(raw_path)
     out_path = Path(out_path)
@@ -104,6 +105,15 @@ def clean_file(raw_path: str | Path, out_path: str | Path) -> dict:
     rows: dict[tuple, dict] = {}  # (market_id, cycle_end_ts, ts_s) → row
     dropped = 0
     latencies: list[float] = []
+    drop_reasons: dict[str, int] = {}
+    drop_examples: dict[str, list] = {}  # reason → [exemplos de campos]
+
+    def _drop(reason: str, info: str = "") -> None:
+        nonlocal dropped
+        dropped += 1
+        drop_reasons[reason] = drop_reasons.get(reason, 0) + 1
+        if debug and drop_reasons[reason] <= 3:
+            drop_examples.setdefault(reason, []).append(info)
 
     with open(raw_path, "rb") as fh:
         for line in fh:
@@ -113,13 +123,13 @@ def clean_file(raw_path: str | Path, out_path: str | Path) -> dict:
             try:
                 rec = _LOADS(line)
             except Exception:
-                dropped += 1
+                _drop("json_parse_error")
                 continue
 
             # market
             market_str = rec.get("market")
             if market_str not in MARKET_MAP:
-                dropped += 1
+                _drop("market_unknown", f"market={market_str!r}")
                 continue
             market_id = MARKET_MAP[market_str]
 
@@ -127,13 +137,13 @@ def clean_file(raw_path: str | Path, out_path: str | Path) -> dict:
             ts_ms = rec.get("ts_ms")
             window_start = rec.get("window_start")
             if ts_ms is None or window_start is None:
-                dropped += 1
+                _drop("missing_ts_or_window", f"ts_ms={ts_ms!r} window_start={window_start!r} keys={list(rec.keys())}")
                 continue
             try:
                 ts_ms = int(ts_ms)
                 window_start = int(window_start)
             except (TypeError, ValueError):
-                dropped += 1
+                _drop("ts_parse_error", f"ts_ms={ts_ms!r} window_start={window_start!r}")
                 continue
 
             ts_s = ts_ms // 1000
@@ -142,13 +152,15 @@ def clean_file(raw_path: str | Path, out_path: str | Path) -> dict:
             time_remaining = cycle_end_ts - ts_s
 
             if not (0 <= time_remaining <= cycle_len):
-                dropped += 1
+                _drop("time_remaining_out_of_range",
+                      f"tr={time_remaining} cycle_len={cycle_len} market={market_str}")
                 continue
 
             # probabilities
             probs = _get_probs(rec)
             if probs is None:
-                dropped += 1
+                _drop("prob_missing_or_invalid",
+                      f"derived={rec.get('derived')} yes={rec.get('yes')} no={rec.get('no')}")
                 continue
             prob_up, prob_down = probs
 
@@ -186,8 +198,15 @@ def clean_file(raw_path: str | Path, out_path: str | Path) -> dict:
 
     if not rows:
         log.warning("Nenhuma linha válida em %s", raw_path)
+        if debug and drop_examples:
+            for reason, examples in drop_examples.items():
+                log.warning("  [%s] x%d — ex: %s", reason,
+                            drop_reasons[reason], examples[0])
+        elif drop_reasons:
+            log.warning("  Motivos: %s", drop_reasons)
         return {"file": str(raw_path), "kept": 0, "dropped": dropped,
-                "drop_pct": 100.0, "latency_p50": 0.0, "latency_p99": 0.0}
+                "drop_pct": 100.0, "latency_p50": 0.0, "latency_p99": 0.0,
+                "drop_reasons": drop_reasons}
 
     # Construir arrays a partir do dict dedup (já deduplicado por key)
     vals = list(rows.values())
@@ -220,6 +239,7 @@ def clean_file(raw_path: str | Path, out_path: str | Path) -> dict:
         "drop_pct":   round(drop_pct, 2),
         "latency_p50": float(np.percentile(lat_arr, 50)),
         "latency_p99": float(np.percentile(lat_arr, 99)),
+        "drop_reasons": drop_reasons,
     }
     log.info("CLEAN %s → kept=%d dropped=%d (%.1f%%)",
              raw_path.name, n, dropped, drop_pct)

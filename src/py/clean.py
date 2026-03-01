@@ -151,10 +151,13 @@ def clean_file(raw_path: str | Path, out_path: str | Path, debug: bool = False) 
             cycle_end_ts  = window_start + cycle_len
             time_remaining = cycle_end_ts - ts_s
 
-            if not (0 <= time_remaining <= cycle_len):
-                _drop("time_remaining_out_of_range",
-                      f"tr={time_remaining} cycle_len={cycle_len} market={market_str}")
+            if time_remaining < 0:
+                # Observação APÓS resolução do ciclo — descarta
+                _drop("time_remaining_negative",
+                      f"tr={time_remaining} market={market_str}")
                 continue
+            # Obs. pré-ciclo (tr > cycle_len) são mantidas; o simulador
+            # nunca entra em trade nelas pois t_max < cycle_len < tr.
 
             # probabilities
             probs = _get_probs(rec)

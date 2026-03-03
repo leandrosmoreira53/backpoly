@@ -87,7 +87,7 @@ def _eval_one_market(args: tuple) -> dict:
         "n_oos_cycles":   int(len(oos_ids)),
     }
 
-    if len(train_ids) < min_trades:
+    if len(train_ids) == 0:
         return {**base, "status": "SEM_DADOS",
                 "prob": None, "t_min": None, "t_max": None, "stop": None,
                 "train_trades": 0, "train_pnl": 0.0, "train_sharpe": 0.0,
@@ -97,6 +97,10 @@ def _eval_one_market(args: tuple) -> dict:
 
     from src.cy.sim_core import run_cycles
     from src.py.metrics   import compute_score
+
+    # Cada ciclo rende no máximo 1 trade; cap adaptativo para mercados com
+    # menos ciclos de treino do que o limiar padrão (ex: 4h com 19 ciclos).
+    effective_min = min(min_trades, max(2, len(train_ids) // 2))
 
     # ---- Grid search no treino ----
     best: dict = {}
@@ -111,7 +115,7 @@ def _eval_one_market(args: tuple) -> dict:
             float(size_shares), float(stop),
             1,
         )
-        m = compute_score(pnl_arr, ent_arr, cycle_end_ts, train_ids, min_trades)
+        m = compute_score(pnl_arr, ent_arr, cycle_end_ts, train_ids, effective_min)
         sc = m.get("score", float("-inf"))
         if math.isfinite(sc) and sc > best_score:
             best_score = sc
@@ -329,12 +333,24 @@ def main() -> None:
     args = parser.parse_args()
 
     from src.py.config import (
-        MARKET_MAP, MONTH_NPZ, CYCLES_NPZ, REPORTS_DIR,
+        MARKET_MAP, MONTH_NPZ, CYCLES_NPZ, LEAN_DIR, REPORTS_DIR,
         PROB_GRID, STOP_LOSS_GRID, SIZE_SHARES,
         get_t_win_grid, get_grid_workers,
     )
 
-    if not os.path.exists(MONTH_NPZ):
+    # --- Auto-pack se lean parquets forem mais novos que o NPZ ---
+    lean_dir_path = Path(LEAN_DIR)
+    npz_path      = Path(MONTH_NPZ)
+    lean_parquets = sorted(lean_dir_path.glob("*.parquet")) if lean_dir_path.exists() else []
+
+    if lean_parquets and (
+        not npz_path.exists()
+        or max(p.stat().st_mtime for p in lean_parquets) > npz_path.stat().st_mtime
+    ):
+        log.info("Lean parquets mais novos que %s — rodando pack automaticamente...", MONTH_NPZ)
+        from src.py.pack import pack as _pack
+        _pack()
+    elif not npz_path.exists():
         log.error(
             "%s não encontrado.\n"
             "Execute primeiro:\n"

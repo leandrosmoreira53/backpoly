@@ -115,10 +115,12 @@ def clean_file(raw_path: str | Path, out_path: str | Path, debug: bool = False) 
         if debug and drop_reasons[reason] <= 3:
             drop_examples.setdefault(reason, []).append(info)
 
+    n_empty_lines = 0
     with open(raw_path, "rb") as fh:
         for line in fh:
             line = line.strip()
             if not line:
+                n_empty_lines += 1
                 continue
             try:
                 rec = _LOADS(line)
@@ -200,7 +202,18 @@ def clean_file(raw_path: str | Path, out_path: str | Path, debug: bool = False) 
             }
 
     if not rows:
-        log.warning("Nenhuma linha válida em %s", raw_path)
+        file_bytes = raw_path.stat().st_size
+        if file_bytes == 0:
+            log.warning("Nenhuma linha válida em %s  [arquivo VAZIO — 0 bytes]", raw_path)
+        elif n_empty_lines > 0 and dropped == 0:
+            log.warning(
+                "Nenhuma linha válida em %s  [%d linhas em branco, 0 com conteúdo — "
+                "arquivo provavelmente só tem newlines (%d bytes)]",
+                raw_path, n_empty_lines, file_bytes,
+            )
+        else:
+            log.warning("Nenhuma linha válida em %s  [%d bytes, %d linhas em branco]",
+                        raw_path, file_bytes, n_empty_lines)
         if debug and drop_examples:
             for reason, examples in drop_examples.items():
                 log.warning("  [%s] x%d — ex: %s", reason,
